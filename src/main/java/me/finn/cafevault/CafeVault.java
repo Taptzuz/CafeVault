@@ -1,6 +1,7 @@
 package me.finn.cafevault;
 
 import me.finn.cafevault.cv.CVMain;
+import me.finn.cafevault.gui.CVGui;
 import me.finn.cafevault.util.CBPoolUtils;
 import me.finn.cafevault.util.CVUtils;
 import me.finn.cafevault.util.RandomUtil;
@@ -23,24 +24,30 @@ import java.util.jar.Manifest;
 
 public class CafeVault {
 
-    public static File outFile = new File(System.getProperty("user.home") + "/Desktop/" + "CV_Output.jar");
+    public static final double version = 1.0;
 
-    private static JarReader jarReader;
-    private static JarWriter jarWriter;
-    private static HashMap<String, String> classNameMap;
+    private JarReader jarReader;
+    private JarWriter jarWriter;
+    private HashMap<String, String> classNameMap;
 
-    public static final boolean DELETE_FILE_ON_EXIT = false;
-    private static final boolean EXECUTE_AFTER_BUILD = true;
+    public static String mainClass;
+    private String manifestEntry = "META-INF/MANIFEST.MF";
+
+    private int classLength = 15;
 
     public static void main(String[] args) {
+        //TODO: add parser
+        if (args.length < 1) new CVGui();
+    }
+
+    public boolean crypt(File input, File output, int length, boolean execute) {
+        this.classLength = length;
         try {
             classNameMap = new HashMap<>();
-            jarReader = new JarReader(new JarFile(new File("./Test.jar")));
-            if (outFile.exists()) if (outFile.delete()) System.out.println("Deleted Existing File");
+            jarReader = new JarReader(new JarFile(input));
+            if (output.exists()) if (output.delete()) System.out.println("Deleted Existing File");
 
-            if (DELETE_FILE_ON_EXIT) outFile.deleteOnExit();
-
-            CafeVault.jarWriter = new JarWriter(outFile);
+            jarWriter = new JarWriter(output);
 
             long before = System.currentTimeMillis();
 
@@ -57,12 +64,11 @@ public class CafeVault {
             });
 
             AtomicBoolean foundManifest = new AtomicBoolean(false);
-            String manifest = "META-INF/MANIFEST.MF";
             jarReader.getResMap().forEach((s, bytes) -> {
                 try {
                     //encrypt bytes via xor (at moment)
                     //TODO: add res-name enc option
-                    if (s.equals(manifest)) {
+                    if (s.equals(manifestEntry)) {
                         foundManifest.set(true);
                         return;
                     }
@@ -95,17 +101,17 @@ public class CafeVault {
             });
 
             //Add Edited/New Manifest
-            jarWriter.write(manifest, getManifest(foundManifest.get() ? jarReader.getJarFile().getInputStream(jarReader.getJarFile().getEntry(manifest)) : null, getCVClassName(CVUtils.formatCVEntryName(CVMain.class.getName()), true)));
+            jarWriter.write(manifestEntry, getManifest(foundManifest.get() ? jarReader.getJarFile().getInputStream(jarReader.getJarFile().getEntry(manifestEntry)) : null, getCVClassName(CVUtils.formatCVEntryName(CVMain.class.getName()), true)));
             jarReader.finish();
             jarWriter.finish();
 
             long after = System.currentTimeMillis();
 
             System.out.println("Finished, Time Elapsed: " + (after - before) + "ms.");
-            System.out.println("Executing Jar...");
 
-            if (EXECUTE_AFTER_BUILD) {
-                ProcessBuilder processBuilder = new ProcessBuilder("java", "-jar", outFile.getAbsolutePath());
+            if (execute) {
+                System.out.println("Executing Jar...");
+                ProcessBuilder processBuilder = new ProcessBuilder("java", "-jar", output.getAbsolutePath());
                 processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                 processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
                 Process process = processBuilder.start();
@@ -113,29 +119,34 @@ public class CafeVault {
                     process.waitFor();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
-                    System.exit(1);
                 }
 
                 process.destroyForcibly();
-                if (DELETE_FILE_ON_EXIT && outFile.delete()) System.out.println("File deleted");
             }
-            System.exit(0);
-        } catch (
-                IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
+            return false;
         }
+        return true;
     }
 
-    public static String getCVClassName(String className, boolean fetchNewName) {
+    public String getMainClass(File file) throws IOException {
+        JarFile jarFile = new JarFile(file);
+        String main = new Manifest(jarFile.getInputStream(jarFile.getEntry(manifestEntry))).getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
+        if (main == null || main.isEmpty()) return null;
+        return main;
+    }
+
+    private String getCVClassName(String className, boolean fetchNewName) {
         if (!classNameMap.containsKey(className)) {
-            String newName = "sample/package/" + RandomUtil.randomString(16);
+            String newName = "sample/package/" + RandomUtil.randomString(this.classLength);
             classNameMap.put(className, newName);
             System.out.println("\"" + className + "\" mapped to => \"" + newName + "\"");
         }
         return fetchNewName ? classNameMap.get(className) : className;
     }
 
-    private static byte[] getManifest(InputStream inputStream, String mainClass) throws IOException {
+    private byte[] getManifest(InputStream inputStream, String mainClass) throws IOException {
         Manifest manifest = inputStream == null ? new Manifest() : new Manifest(inputStream);
         Attributes attributes = manifest.getMainAttributes();
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();

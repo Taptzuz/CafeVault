@@ -17,7 +17,7 @@ import static me.finn.cafevault.util.CVUtils.*;
 public class CVMain {
 
     private static HashMap<String, byte[]> classMap, resMap;
-    private static String mainClass = "me.finn.codehider.Gui";
+    private static String mainClass;
 
     public static void main(String[] args) {
         try {
